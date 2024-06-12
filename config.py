@@ -5,4 +5,4 @@ class Config():
     use_baseline = True
     record_freq = 1000
     game = 'CartPole-v0'
-    exp_id = 'exp-2'
+    exp_id = 'exp-3'
