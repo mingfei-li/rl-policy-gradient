@@ -87,8 +87,8 @@ def train(run_id):
             b = 0
 
         a = g - b
-        # a -= a.mean()
-        # a /= a.std()
+        a -= a.mean()
+        a /= a.std()
 
         policy_network.train()
         pi = policy_network(s).gather(1, torch.tensor(actions).unsqueeze(dim=1))

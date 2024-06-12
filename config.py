@@ -4,5 +4,5 @@ class Config():
     gamma = 1
     use_baseline = True
     record_freq = 1000
-    game = 'CartPole-v0'
-    exp_id = 'exp-3'
+    game = 'CartPole-v1'
+    exp_id = 'exp-4'
