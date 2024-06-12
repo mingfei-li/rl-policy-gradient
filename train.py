@@ -21,8 +21,11 @@ def set_seed(seed):
 
 def train(run_id):
     config = Config()
-    env = gym.make('CartPole-v0', render_mode='rgb_array')
-    env = RecordVideoV0(env, video_folder=f'results/{config.exp_id}/{run_id}/videos')
+    env = RecordVideoV0(
+        env=gym.make('CartPole-v0', render_mode='rgb_array'),
+        video_folder=f'results/{config.exp_id}/{run_id}/videos',
+        episode_trigger=lambda n: n%config.record_freq == 0,
+    )
     env.reset(seed=run_id)
     env.action_space.seed(run_id)
 
@@ -65,13 +68,10 @@ def train(run_id):
                 g[t] += g[t+1] * config.gamma
         s = torch.tensor(np.stack(states))
         g = g.unsqueeze(dim=1)
-        print(f"s = {s}")
-        print(f"g = {g}")
 
         if config.use_baseline:
             baseline_network.train()
             baseline_preds = baseline_network(s)
-            print(f"baseline_preds={baseline_preds}")
             baseline_loss = nn.MSELoss()(baseline_preds, g)
             baseline_optimizer.zero_grad()
             baseline_loss.backward()
@@ -81,9 +81,8 @@ def train(run_id):
             with torch.no_grad():
                 b = baseline_network(s)
             
-            print(f"b = {b}")
-            print(f"baseline_loss = {baseline_loss}")
             logger.add_scalar('baseline_loss', baseline_loss.item())
+            logger.add_scalar('baseline', b.mean().item())
         else:
             b = 0
 
@@ -97,20 +96,18 @@ def train(run_id):
         policy_optimizer.zero_grad()
         policy_loss.backward()
         policy_optimizer.step()
-        print(f"pi = {pi}")
-        print(f"a = {a}")
-        print(f"policy_loss = {policy_loss}")
 
         logger.add_scalar('episode_len', len(g))
         logger.add_scalar('reward', g[0].item())
         logger.add_scalar('policy_loss', policy_loss.item())
         logger.add_scalar('lr', config.lr)
+        logger.add_scalar('g', g.mean().item())
         logger.flush(i)
 
     env.close()
 
 
 if __name__ == "__main__":
-    for run_id in [0, 42, 1234, 9999, 11111]:
+    for run_id in [0]:#, 42, 1234, 9999, 11111]:
         set_seed(run_id)
         train(run_id)
