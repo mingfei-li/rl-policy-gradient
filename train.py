@@ -1,60 +1,44 @@
-from collections import deque
+from config import Config
 from gymnasium.experimental.wrappers import RecordVideoV0
-from statistics import mean
+from logger import Logger
+from models import PolicyMLPModel, BaselineMLPModel
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+
 import gymnasium as gym
+import numpy as np
+import random
 import torch
 import torch.nn as nn
 
-class Config():
-    n_training_episodes = 5000
-    lr = 0.001
-    gamma = 1
-    exp_id = 'exp-3'
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-class MLP(nn.Module):
-    def __init__(self, in_features, out_features):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(in_features, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, out_features),
-            nn.Softmax(dim=1),
-        )
-
-    def forward(self, x):
-        return self.model(x)
-
-class Logger():
-    def __init__(self, log_dir):
-        self.scalar_buffer = {}
-        self.writer = SummaryWriter(log_dir)
-
-    def add_scalar(self, key, value):
-        if key not in self.scalar_buffer.keys():
-            self.scalar_buffer[key] = deque(maxlen=50)
-        self.scalar_buffer[key].append(value)
-
-    def flush(self, t):
-        for key, value in self.scalar_buffer.items():
-            self.writer.add_scalar(key, mean(value), t)
-        self.writer.flush()
-
-def train():
+def train(run_id):
     config = Config()
-
     env = gym.make('CartPole-v0', render_mode='rgb_array')
-    env = RecordVideoV0(env, video_folder=f'results/{config.exp_id}/videos')
-    logger = Logger(log_dir=f'results/{config.exp_id}/logs')
+    env = RecordVideoV0(env, video_folder=f'results/{config.exp_id}/{run_id}/videos')
+    env.reset(seed=run_id)
+    env.action_space.seed(run_id)
 
-    model = MLP(
+    logger = Logger(log_dir=f'results/{config.exp_id}/{run_id}/logs')
+
+    policy_network = PolicyMLPModel(
         in_features=env.observation_space.shape[0],
         out_features=env.action_space.n,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    policy_optimizer = torch.optim.Adam(policy_network.parameters(), lr=config.lr)
+
+    baseline_network = BaselineMLPModel(
+        in_features=env.observation_space.shape[0],
+        out_features=1,
+    )
+    baseline_optimizer = torch.optim.Adam(baseline_network.parameters(), lr=config.lr)
 
     for i in tqdm(range(config.n_training_episodes)):
         states = []
@@ -63,9 +47,9 @@ def train():
 
         state, _ = env.reset()
         while True:
-            model.eval()
+            policy_network.eval()
             with torch.no_grad():
-                pi = model(torch.tensor(state).unsqueeze(dim=0))[0]
+                pi = policy_network(torch.tensor(state).unsqueeze(dim=0))[0]
             action = torch.multinomial(pi, num_samples=1).item()
             states.append(state)
             actions.append(action)
@@ -74,23 +58,52 @@ def train():
             if terminated or truncated:
                 break
 
-        model.train()
         g = torch.zeros(len(states))
-        pi_a = torch.zeros(len(states))
         for t in range(len(states) - 1, -1, -1):
             g[t] = rewards[t]
             if t < len(states) - 1:
                 g[t] += g[t+1] * config.gamma
-            pi_a[t] = model(torch.tensor(states[t]).unsqueeze(dim=0))[0][actions[t]]
+        s = torch.tensor(np.stack(states))
+        g = g.unsqueeze(dim=1)
+        print(f"s = {s}")
+        print(f"g = {g}")
 
-        loss = -torch.sum(g * torch.log(pi_a))
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if config.use_baseline:
+            baseline_network.train()
+            baseline_preds = baseline_network(s)
+            print(f"baseline_preds={baseline_preds}")
+            baseline_loss = nn.MSELoss()(baseline_preds, g)
+            baseline_optimizer.zero_grad()
+            baseline_loss.backward()
+            baseline_optimizer.step()
+
+            baseline_network.eval()
+            with torch.no_grad():
+                b = baseline_network(s)
+            
+            print(f"b = {b}")
+            print(f"baseline_loss = {baseline_loss}")
+            logger.add_scalar('baseline_loss', baseline_loss.item())
+        else:
+            b = 0
+
+        a = g - b
+        a -= a.mean()
+        a /= a.std()
+
+        policy_network.train()
+        pi = policy_network(s).gather(1, torch.tensor(actions).unsqueeze(dim=1))
+        policy_loss = -torch.sum(a * torch.log(pi))
+        policy_optimizer.zero_grad()
+        policy_loss.backward()
+        policy_optimizer.step()
+        print(f"pi = {pi}")
+        print(f"a = {a}")
+        print(f"policy_loss = {policy_loss}")
 
         logger.add_scalar('episode_len', len(g))
         logger.add_scalar('reward', g[0].item())
-        logger.add_scalar('loss', loss.item())
+        logger.add_scalar('policy_loss', policy_loss.item())
         logger.add_scalar('lr', config.lr)
         logger.flush(i)
 
@@ -98,4 +111,6 @@ def train():
 
 
 if __name__ == "__main__":
-    train()
+    for run_id in [0, 42, 1234, 9999, 11111]:
+        set_seed(run_id)
+        train(run_id)
