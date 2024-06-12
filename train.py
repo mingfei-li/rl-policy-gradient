@@ -22,7 +22,7 @@ def set_seed(seed):
 def train(run_id):
     config = Config()
     env = RecordVideoV0(
-        env=gym.make('CartPole-v0', render_mode='rgb_array'),
+        env=gym.make(config.game, render_mode='rgb_array'),
         video_folder=f'results/{config.exp_id}/{run_id}/videos',
         episode_trigger=lambda n: n%config.record_freq == 0,
     )
