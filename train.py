@@ -73,6 +73,7 @@ def train(run_id):
                     mean=output[:env.action_space.shape[0]],
                     std=torch.abs(output[env.action_space.shape[0]:]),
                 )
+
             states.append(state)
             actions.append(action)
             state, reward, terminated, truncated, _ = env.step(action)
@@ -129,6 +130,7 @@ def train(run_id):
         logger.add_scalar('policy_loss', policy_loss.item())
         logger.add_scalar('policy_lr', config.policy_network_lr)
         logger.add_scalar('g', g.mean().item())
+        logger.add_scalar('action', torch.stack(actions).mean().item())
         logger.flush(i)
 
     env.close()
