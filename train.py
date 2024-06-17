@@ -1,7 +1,7 @@
 from config import Config
 from gymnasium.experimental.wrappers import RecordVideoV0
 from logger import Logger
-from models import PolicyMLPModel, BaselineMLPModel
+from models import DiscretePolicyModel, ContinuousPolicyModel, BaselineModel
 from tqdm import tqdm
 
 import gymnasium as gym
@@ -31,13 +31,19 @@ def train(run_id):
 
     logger = Logger(log_dir=f'results/{config.exp_id}/{run_id}/logs')
 
-    policy_network = PolicyMLPModel(
-        in_features=env.observation_space.shape[0],
-        out_features=env.action_space.n,
-    )
+    if config.discrete:
+        policy_network = DiscretePolicyModel(
+            in_features=env.observation_space.shape[0],
+            out_features=env.action_space.n,
+        )
+    else:
+        policy_network = ContinuousPolicyModel(
+            in_features=env.observation_space.shape[0],
+            out_features=env.action_space.shape[0],
+        )
     policy_optimizer = torch.optim.Adam(policy_network.parameters(), lr=config.lr)
 
-    baseline_network = BaselineMLPModel(
+    baseline_network = BaselineModel(
         in_features=env.observation_space.shape[0],
         out_features=1,
     )
@@ -52,8 +58,15 @@ def train(run_id):
         while True:
             policy_network.eval()
             with torch.no_grad():
-                pi = policy_network(torch.tensor(state).unsqueeze(dim=0))[0]
-            action = torch.multinomial(pi, num_samples=1).item()
+                input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
+                output = policy_network(input)[0]
+            if config.discrete:
+                action = torch.multinomial(output, num_samples=1).item()
+            else:
+                action = torch.normal(
+                    mean=output[:env.action_space.shape[0]],
+                    std=torch.abs(output[env.action_space.shape[0]:]),
+                )
             states.append(state)
             actions.append(action)
             state, reward, terminated, truncated, _ = env.step(action)
@@ -66,7 +79,7 @@ def train(run_id):
             g[t] = rewards[t]
             if t < len(states) - 1:
                 g[t] += g[t+1] * config.gamma
-        s = torch.tensor(np.stack(states))
+        s = torch.tensor(np.stack(states), dtype=torch.float32)
         g = g.unsqueeze(dim=1)
 
         if config.use_baseline:
@@ -91,8 +104,15 @@ def train(run_id):
         a /= a.std()
 
         policy_network.train()
-        pi = policy_network(s).gather(1, torch.tensor(actions).unsqueeze(dim=1))
-        policy_loss = -torch.sum(a * torch.log(pi))
+        output = policy_network(s)
+        if config.discrete:
+            log_pi = torch.log(output.gather(1, torch.tensor(actions).unsqueeze(dim=1)))
+        else:
+            log_pi = torch.sum(
+                (torch.stack(actions)-output[:,:env.action_space.shape[0]])**2 / output[:,env.action_space.shape[0]:]**2,
+                dim=1,
+            )
+        policy_loss = -torch.sum(a * log_pi)
         policy_optimizer.zero_grad()
         policy_loss.backward()
         policy_optimizer.step()
