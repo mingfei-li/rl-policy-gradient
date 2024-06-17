@@ -41,13 +41,19 @@ def train(run_id):
             in_features=env.observation_space.shape[0],
             out_features=env.action_space.shape[0],
         )
-    policy_optimizer = torch.optim.Adam(policy_network.parameters(), lr=config.lr)
+    policy_optimizer = torch.optim.Adam(
+        policy_network.parameters(),
+        lr=config.policy_network_lr,
+    )
 
     baseline_network = BaselineModel(
         in_features=env.observation_space.shape[0],
         out_features=1,
     )
-    baseline_optimizer = torch.optim.Adam(baseline_network.parameters(), lr=config.lr)
+    baseline_optimizer = torch.optim.Adam(
+        baseline_network.parameters(),
+        lr=config.baseline_network_lr,
+    )
 
     for i in tqdm(range(config.n_training_episodes)):
         states = []
@@ -95,6 +101,7 @@ def train(run_id):
                 b = baseline_network(s)
             
             logger.add_scalar('baseline_loss', baseline_loss.item())
+            logger.add_scalar('baseline_lr', config.baseline_network_lr)
             logger.add_scalar('baseline', b.mean().item())
         else:
             b = 0
@@ -120,7 +127,7 @@ def train(run_id):
         logger.add_scalar('episode_len', len(g))
         logger.add_scalar('reward', g[0].item())
         logger.add_scalar('policy_loss', policy_loss.item())
-        logger.add_scalar('lr', config.lr)
+        logger.add_scalar('policy_lr', config.policy_network_lr)
         logger.add_scalar('g', g.mean().item())
         logger.flush(i)
 
