@@ -61,85 +61,106 @@ class Agent():
             lr=self.config.baseline_network_lr,
         )
 
+    def sample_one_episode(self):
+        states = []
+        actions = []
+        rewards = []
+        state, _ = self.env.reset()
+        while True:
+            self.policy_network.eval()
+            with torch.no_grad():
+                input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
+                output = self.policy_network(input)[0]
+            if self.config.discrete:
+                action = torch.multinomial(output, num_samples=1).item()
+            else:
+                action = torch.normal(
+                    mean=output[:self.n_actions],
+                    std=torch.abs(output[self.n_actions:]),
+                )
+
+            states.append(state)
+            actions.append(action)
+            state, reward, terminated, truncated, _ = self.env.step(action)
+            rewards.append(reward)
+            if terminated or truncated:
+                break
+
+        r = torch.zeros(len(states))
+        for t in range(len(states) - 1, -1, -1):
+            r[t] = rewards[t]
+            if t < len(states) - 1:
+                r[t] += r[t+1] * self.config.gamma
+        s = torch.tensor(np.stack(states), dtype=torch.float32)
+        r = r.unsqueeze(dim=1)
+        if self.config.discrete:
+            a = torch.tensor(actions).unsqueeze(dim=1)
+        else:
+            a = torch.stack(actions)
+
+        self.logger.add_scalar('episode_len', len(r))
+        self.logger.add_scalar('episode_reward', sum(rewards))
+        self.logger.add_scalar('episode_discounted_reward', r[0].item())
+        self.logger.add_scalar('action.avg', a.float().mean().item())
+        self.logger.add_scalar('action.max', a.float().max().item())
+        self.logger.add_scalar('action.min', a.float().min().item())
+        return s, a, r
+
+    def sample(self):
+        states = []
+        actions = []
+        rewards = []
+
+        for _ in range(self.config.batch_size):
+            s, a, r = self.sample_one_episode()
+            states.append(s)
+            actions.append(a)
+            rewards.append(r)
+
+        return torch.concat(states), torch.concat(actions), torch.concat(rewards)
+
     def train(self):
-        for i in tqdm(range(self.config.n_training_episodes)):
-            states = []
-            actions = []
-            rewards = []
-
-            state, _ = self.env.reset()
-            while True:
-                self.policy_network.eval()
-                with torch.no_grad():
-                    input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
-                    output = self.policy_network(input)[0]
-                if self.config.discrete:
-                    action = torch.multinomial(output, num_samples=1).item()
-                else:
-                    action = torch.normal(
-                        mean=output[:self.n_actions],
-                        std=torch.abs(output[self.n_actions:]),
-                    )
-
-                states.append(state)
-                actions.append(action)
-                state, reward, terminated, truncated, _ = self.env.step(action)
-                rewards.append(reward)
-                if terminated or truncated:
-                    break
-
-            g = torch.zeros(len(states))
-            for t in range(len(states) - 1, -1, -1):
-                g[t] = rewards[t]
-                if t < len(states) - 1:
-                    g[t] += g[t+1] * self.config.gamma
-            s = torch.tensor(np.stack(states), dtype=torch.float32)
-            g = g.unsqueeze(dim=1)
+        for i in tqdm(range(self.config.n_batches)):
+            states, actions, rewards = self.sample()
 
             if self.config.use_baseline:
                 self.baseline_network.train()
-                baseline_preds = self.baseline_network(s)
-                baseline_loss = nn.MSELoss()(baseline_preds, g)
+                baseline_preds = self.baseline_network(states)
+                baseline_loss = nn.MSELoss()(baseline_preds, rewards)
                 self.baseline_optimizer.zero_grad()
                 baseline_loss.backward()
                 self.baseline_optimizer.step()
 
                 self.baseline_network.eval()
                 with torch.no_grad():
-                    b = self.baseline_network(s)
+                    baselines = self.baseline_network(states)
                 
                 self.logger.add_scalar('baseline_loss', baseline_loss.item())
                 self.logger.add_scalar('baseline_lr', self.config.baseline_network_lr)
-                self.logger.add_scalar('baseline', b.mean().item())
+                self.logger.add_scalar('baseline', baselines.mean().item())
             else:
-                b = 0
+                baselines = 0
 
-            a = g - b
-            a -= a.mean()
-            a /= a.std()
+            advantages = rewards - baselines
+            advantages -= advantages.mean()
+            advantages /= advantages.std()
 
             self.policy_network.train()
-            output = self.policy_network(s)
+            output = self.policy_network(states)
             if self.config.discrete:
-                actions = torch.tensor(actions).unsqueeze(dim=1)
                 log_pi = torch.log(output.gather(1, actions))
             else:
-                actions = torch.stack(actions)
                 log_pi = torch.sum(
                     (actions-output[:,:self.n_actions])**2 / output[:,self.n_actions:]**2,
                     dim=1,
                 )
-            policy_loss = -torch.sum(a * log_pi)
+            policy_loss = -torch.sum(advantages * log_pi)
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             self.policy_optimizer.step()
 
-            self.logger.add_scalar('episode_len', len(g))
-            self.logger.add_scalar('reward', g[0].item())
             self.logger.add_scalar('policy_loss', policy_loss.item())
             self.logger.add_scalar('policy_lr', self.config.policy_network_lr)
-            self.logger.add_scalar('g', g.mean().item())
-            self.logger.add_scalar('action', actions.float().mean().item())
             self.logger.flush(i)
     
         self.env.close()
