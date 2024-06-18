@@ -23,11 +23,12 @@ class Agent():
     def __init__(self, run_id):
         self.config = Config()
         self.run_id = run_id
-        self.env = RecordVideoV0(
-            env=gym.make(self.config.game, render_mode='rgb_array'),
-            video_folder=f'results/{self.config.exp_id}/{run_id}/videos',
-            episode_trigger=lambda n: n%self.config.record_freq == 0,
-        )
+        self.env = gym.make(self.config.game, render_mode='rgb_array')
+        # self.env = RecordVideoV0(
+        #     env=gym.make(self.config.game, render_mode='rgb_array'),
+        #     video_folder=f'results/{self.config.exp_id}/{run_id}/videos',
+        #     episode_trigger=lambda n: n%self.config.record_freq == 0,
+        # )
         self.env.reset(seed=run_id)
         self.env.action_space.seed(run_id)
         if self.config.discrete:
@@ -148,17 +149,27 @@ class Agent():
             self.policy_network.train()
             output = self.policy_network(states)
             if self.config.discrete:
-                log_pi = torch.log(output.gather(1, actions))
+                entropy = -torch.sum(torch.log(output) * output, dim=1)
+                log_prob = torch.log(output.gather(1, actions))
             else:
-                log_pi = torch.sum(
-                    (actions-output[:,:self.n_actions])**2 / output[:,self.n_actions:]**2,
+                mu = output[:,:self.n_actions]
+                sigma = output[:,self.n_actions:]
+                entropy = -torch.sum(
+                    0.5 * torch.log(2*torch.pi*torch.e*(sigma**2)),
                     dim=1,
                 )
-            policy_loss = -torch.sum(advantages * log_pi)
+                log_prob = torch.sum(-(actions-mu)**2 / sigma**2, dim=1)
+            policy_loss = -torch.sum(advantages * log_prob)
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             self.policy_optimizer.step()
 
+            self.logger.add_scalar('entropy.avg', entropy.mean().item())
+            self.logger.add_scalar('entropy.max', entropy.max().item())
+            self.logger.add_scalar('entropy.min', entropy.min().item())
+            self.logger.add_scalar('log_prob.avg', log_prob.mean().item())
+            self.logger.add_scalar('log_prob.max', log_prob.max().item())
+            self.logger.add_scalar('log_prob.min', log_prob.min().item())
             self.logger.add_scalar('policy_loss', policy_loss.item())
             self.logger.add_scalar('policy_lr', self.config.policy_network_lr)
             self.logger.flush(i)
