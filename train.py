@@ -69,16 +69,15 @@ class Agent():
         state, _ = self.env.reset()
         while True:
             self.policy_network.eval()
-            with torch.no_grad():
-                input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
-                output = self.policy_network(input)[0]
+            input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
             if self.config.discrete:
-                action = torch.multinomial(output, num_samples=1).item()
+                with torch.no_grad():
+                    prob = self.policy_network(input)[0]
+                action = torch.multinomial(prob, num_samples=1).item()
             else:
-                action = torch.normal(
-                    mean=output[:self.n_actions],
-                    std=torch.abs(output[self.n_actions:]),
-                )
+                with torch.no_grad():
+                    mu, sigma = self.policy_network(input)
+                action = torch.normal(mean=mu[0], std=sigma[0])
 
             states.append(state)
             actions.append(action)
@@ -147,18 +146,24 @@ class Agent():
             advantages /= advantages.std()
 
             self.policy_network.train()
-            output = self.policy_network(states)
             if self.config.discrete:
-                entropy = -torch.sum(torch.log(output) * output, dim=1)
-                log_prob = torch.log(output.gather(1, actions))
+                prob = self.policy_network(states)
+                entropy = -torch.sum(torch.log(prob) * prob, dim=1)
+                log_prob = torch.log(prob.gather(1, actions))
             else:
-                mu = output[:,:self.n_actions]
-                sigma = output[:,self.n_actions:]
-                entropy = -torch.sum(
+                mu, sigma = self.policy_network(states)
+                entropy = torch.sum(
                     0.5 * torch.log(2*torch.pi*torch.e*(sigma**2)),
                     dim=1,
                 )
-                log_prob = torch.sum(-(actions-mu)**2 / sigma**2, dim=1)
+                log_prob = -torch.sum((actions-mu)**2 / sigma**2, dim=1)
+                self.logger.add_scalar('mu.avg', mu.mean().item())
+                self.logger.add_scalar('mu.max', mu.max().item())
+                self.logger.add_scalar('mu.min', mu.min().item())
+                self.logger.add_scalar('sigma.avg', sigma.mean().item())
+                self.logger.add_scalar('sigma.max', sigma.max().item())
+                self.logger.add_scalar('sigma.min', sigma.min().item())
+
             policy_loss = -torch.sum(advantages * log_prob)
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
