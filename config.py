@@ -1,10 +1,12 @@
 class Config():
     n_training_episodes = 5000
-    policy_network_lr = 1e-8
-    baseline_network_lr = 0.001
+    policy_network_lr = 1e-3
+    baseline_network_lr = 1e-3
     gamma = 1
     use_baseline = True
     record_freq = 1000
-    discrete = False
-    game = 'InvertedPendulum-v4'
-    exp_id = 'exp-13'
+    discrete = True
+    game = 'CartPole-v0'
+    # discrete = False
+    # game = 'InvertedPendulum-v4'
+    exp_id = 'exp-14'
