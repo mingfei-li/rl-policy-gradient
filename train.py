@@ -98,12 +98,7 @@ class Agent():
         else:
             a = torch.stack(actions)
 
-        self.logger.add_scalar('episode_len', len(r))
-        self.logger.add_scalar('episode_reward', sum(rewards))
-        self.logger.add_scalar('episode_discounted_reward', r[0].item())
-        self.logger.add_scalar('action.avg', a.float().mean().item())
-        self.logger.add_scalar('action.max', a.float().max().item())
-        self.logger.add_scalar('action.min', a.float().min().item())
+
         return s, a, r
 
     def sample(self):
@@ -119,24 +114,36 @@ class Agent():
 
         return torch.concat(states), torch.concat(actions), torch.concat(rewards)
 
+    def train_baseline(self):
+        for _ in range(self.config.n_batches_baseline):
+            states, _, rewards = self.sample()
+            self.baseline_network.train()
+            baseline_preds = self.baseline_network(states)
+            baseline_loss = nn.MSELoss()(baseline_preds, rewards)
+            self.baseline_optimizer.zero_grad()
+            baseline_loss.backward()
+            self.baseline_optimizer.step()
+            self.logger.add_scalar('baseline_loss', baseline_loss.item())
+            self.logger.add_scalar('baseline_lr', self.config.baseline_network_lr)
+
+    def eval(self):
+        _, a, r = self.sample_one_episode()
+        self.logger.add_scalar('episode_len', len(r))
+        self.logger.add_scalar('episode_discounted_reward', r[0].item())
+        self.logger.add_scalar('action.avg', a.float().mean().item())
+        self.logger.add_scalar('action.max', a.float().max().item())
+        self.logger.add_scalar('action.min', a.float().min().item())
+
+
     def train(self):
         for i in tqdm(range(self.config.n_batches)):
             states, actions, rewards = self.sample()
 
-            if self.config.use_baseline:
-                self.baseline_network.train()
-                baseline_preds = self.baseline_network(states)
-                baseline_loss = nn.MSELoss()(baseline_preds, rewards)
-                self.baseline_optimizer.zero_grad()
-                baseline_loss.backward()
-                self.baseline_optimizer.step()
-
+            if self.config.n_batches_baseline > 0:
+                self.train_baseline()
                 self.baseline_network.eval()
                 with torch.no_grad():
                     baselines = self.baseline_network(states)
-                
-                self.logger.add_scalar('baseline_loss', baseline_loss.item())
-                self.logger.add_scalar('baseline_lr', self.config.baseline_network_lr)
                 self.logger.add_scalar('baseline', baselines.mean().item())
             else:
                 baselines = 0
@@ -168,6 +175,8 @@ class Agent():
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             self.policy_optimizer.step()
+
+            self.eval()
 
             self.logger.add_scalar('entropy.avg', entropy.mean().item())
             self.logger.add_scalar('entropy.max', entropy.max().item())
