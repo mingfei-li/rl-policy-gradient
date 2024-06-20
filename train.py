@@ -3,6 +3,7 @@ from gymnasium.experimental.wrappers import RecordVideoV0
 from logger import Logger
 from models import DiscretePolicyModel, ContinuousPolicyModel, BaselineModel
 from tqdm import tqdm
+from torch.distributions import Categorical, Normal
 
 import gymnasium as gym
 import numpy as np
@@ -62,6 +63,15 @@ class Agent():
             lr=self.config.baseline_network_lr,
         )
 
+    def transform(self, action):
+        if self.config.discrete:
+            return action
+        
+        low = self.env.action_space.low
+        high = self.env.action_space.high
+        print((np.tanh(action) * (high-low) + (high+low)) / 2.0)
+        return (np.tanh(action) * (high-low) + (high+low)) / 2.0
+
     def sample_one_episode(self):
         states = []
         actions = []
@@ -72,16 +82,20 @@ class Agent():
             input = torch.tensor(state, dtype=torch.float32).unsqueeze(dim=0)
             if self.config.discrete:
                 with torch.no_grad():
-                    prob = self.policy_network(input)[0]
-                action = torch.multinomial(prob, num_samples=1).item()
+                    prob = self.policy_network(input)
+                distribution = Categorical(prob.squeeze(dim=0))
+                action = distribution.sample().item()
             else:
                 with torch.no_grad():
                     mu, sigma = self.policy_network(input)
-                action = torch.normal(mean=mu[0], std=sigma[0])
+                distribution = Normal(mu.squeeze(dim=0), sigma.squeeze(dim=0))
+                action = distribution.sample().numpy()
 
             states.append(state)
             actions.append(action)
-            state, reward, terminated, truncated, _ = self.env.step(action)
+            (
+                state, reward, terminated, truncated, _,
+            ) = self.env.step(self.transform(action))
             rewards.append(reward)
             if terminated or truncated:
                 break
@@ -92,13 +106,9 @@ class Agent():
             if t < len(states) - 1:
                 r[t] += r[t+1] * self.config.gamma
         s = torch.tensor(np.stack(states), dtype=torch.float32)
-        r = r.unsqueeze(dim=1)
-        if self.config.discrete:
-            a = torch.tensor(actions).unsqueeze(dim=1)
-        else:
-            a = torch.stack(actions)
-
-
+        if not self.config.discrete:
+            actions = np.stack(actions)
+        a = torch.tensor(actions)
         return s, a, r
 
     def sample(self):
@@ -118,7 +128,7 @@ class Agent():
         for _ in range(self.config.n_batches_baseline):
             states, _, rewards = self.sample()
             self.baseline_network.train()
-            baseline_preds = self.baseline_network(states)
+            baseline_preds = self.baseline_network(states).squeeze(dim=1)
             baseline_loss = nn.MSELoss()(baseline_preds, rewards)
             self.baseline_optimizer.zero_grad()
             baseline_loss.backward()
@@ -143,7 +153,7 @@ class Agent():
                 self.train_baseline()
                 self.baseline_network.eval()
                 with torch.no_grad():
-                    baselines = self.baseline_network(states)
+                    baselines = self.baseline_network(states).squeeze(dim=1)
                 self.logger.add_scalar('baseline', baselines.mean().item())
             else:
                 baselines = 0
@@ -155,15 +165,15 @@ class Agent():
             self.policy_network.train()
             if self.config.discrete:
                 prob = self.policy_network(states)
-                entropy = -torch.sum(torch.log(prob) * prob, dim=1)
-                log_prob = torch.log(prob.gather(1, actions))
+                distribution = Categorical(prob)
+                entropy = distribution.entropy()
+                log_prob = distribution.log_prob(actions)
             else:
                 mu, sigma = self.policy_network(states)
-                entropy = torch.sum(
-                    0.5 * torch.log(2*torch.pi*torch.e*(sigma**2)),
-                    dim=1,
-                )
-                log_prob = -torch.sum((actions-mu)**2 / sigma**2, dim=1)
+                distribution = Normal(mu, sigma)
+                entropy = distribution.entropy().sum(dim=1)
+                log_prob = distribution.log_prob(actions).sum(dim=1)
+
                 self.logger.add_scalar('mu.avg', mu.mean().item())
                 self.logger.add_scalar('mu.max', mu.max().item())
                 self.logger.add_scalar('mu.min', mu.min().item())
@@ -171,7 +181,7 @@ class Agent():
                 self.logger.add_scalar('sigma.max', sigma.max().item())
                 self.logger.add_scalar('sigma.min', sigma.min().item())
 
-            policy_loss = -torch.sum(advantages * log_prob)
+            policy_loss = -torch.sum(advantages * distribution.log_prob(actions))
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             self.policy_optimizer.step()
