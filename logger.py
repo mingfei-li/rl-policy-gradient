@@ -9,7 +9,7 @@ class Logger():
 
     def add_scalar(self, key, value):
         if key not in self.scalar_buffer.keys():
-            self.scalar_buffer[key] = deque(maxlen=50)
+            self.scalar_buffer[key] = deque(maxlen=5)
         self.scalar_buffer[key].append(value)
 
     def flush(self, t):
