@@ -67,9 +67,9 @@ class Agent():
         if self.config.discrete:
             return action
         
-        low = self.env.action_space.low
-        high = self.env.action_space.high
-        return (np.tanh(action) * (high-low) + (high+low)) / 2.0
+        low = torch.tensor(self.env.action_space.low)
+        high = torch.tensor(self.env.action_space.high)
+        return (torch.tanh(action) * (high-low) + (high+low)) / 2.0
 
     def sample_one_episode(self):
         states = []
@@ -88,7 +88,7 @@ class Agent():
                 with torch.no_grad():
                     mu, sigma = self.policy_network(input)
                 distribution = Normal(mu.squeeze(dim=0), sigma.squeeze(dim=0))
-                action = distribution.sample().numpy()
+                action = distribution.sample()
 
             states.append(state)
             actions.append(action)
@@ -105,9 +105,10 @@ class Agent():
             if t < len(states) - 1:
                 r[t] += r[t+1] * self.config.gamma
         s = torch.tensor(np.stack(states), dtype=torch.float32)
-        if not self.config.discrete:
-            actions = np.stack(actions)
-        a = torch.tensor(actions)
+        if self.config.discrete:
+            a = torch.tensor(actions)
+        else:
+            a = torch.stack(actions)
         return s, a, r
 
     def sample(self):
@@ -137,11 +138,15 @@ class Agent():
 
     def eval(self):
         _, a, r = self.sample_one_episode()
+        ta = self.transform(a)
         self.logger.add_scalar('episode_len', len(r))
         self.logger.add_scalar('episode_discounted_reward', r[0].item())
         self.logger.add_scalar('action.avg', a.float().mean().item())
         self.logger.add_scalar('action.max', a.float().max().item())
         self.logger.add_scalar('action.min', a.float().min().item())
+        self.logger.add_scalar('transformed_action.avg', ta.float().mean().item())
+        self.logger.add_scalar('transformed_action.max', ta.float().max().item())
+        self.logger.add_scalar('transformed_action.min', ta.float().min().item())
 
 
     def train(self):

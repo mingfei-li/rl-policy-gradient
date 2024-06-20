@@ -10,4 +10,4 @@ class Config():
     # game = 'CartPole-v0'
     discrete = False
     game = 'InvertedPendulum-v4'
-    exp_id = 'exp-21'
+    exp_id = 'exp-22'
