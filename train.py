@@ -69,7 +69,6 @@ class Agent():
         
         low = self.env.action_space.low
         high = self.env.action_space.high
-        print((np.tanh(action) * (high-low) + (high+low)) / 2.0)
         return (np.tanh(action) * (high-low) + (high+low)) / 2.0
 
     def sample_one_episode(self):
