@@ -63,14 +63,6 @@ class Agent():
             lr=self.config.baseline_network_lr,
         )
 
-    def transform(self, action):
-        if self.config.discrete:
-            return action
-        
-        low = torch.tensor(self.env.action_space.low)
-        high = torch.tensor(self.env.action_space.high)
-        return (torch.tanh(action) * (high-low) + (high+low)) / 2.0
-
     def sample_one_episode(self):
         states = []
         actions = []
@@ -94,7 +86,7 @@ class Agent():
             actions.append(action)
             (
                 state, reward, terminated, truncated, _,
-            ) = self.env.step(self.transform(action))
+            ) = self.env.step(action)
             rewards.append(reward)
             if terminated or truncated:
                 break
@@ -138,16 +130,11 @@ class Agent():
 
     def eval(self):
         _, a, r = self.sample_one_episode()
-        ta = self.transform(a)
         self.logger.add_scalar('episode_len', len(r))
         self.logger.add_scalar('episode_discounted_reward', r[0].item())
         self.logger.add_scalar('action.avg', a.float().mean().item())
         self.logger.add_scalar('action.max', a.float().max().item())
         self.logger.add_scalar('action.min', a.float().min().item())
-        self.logger.add_scalar('transformed_action.avg', ta.float().mean().item())
-        self.logger.add_scalar('transformed_action.max', ta.float().max().item())
-        self.logger.add_scalar('transformed_action.min', ta.float().min().item())
-
 
     def train(self):
         for i in tqdm(range(self.config.n_batches)):
