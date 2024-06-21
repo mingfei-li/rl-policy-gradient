@@ -1,7 +1,7 @@
 class Config():
     n_batches = 5000
     batch_size = 1
-    policy_network_lr = 5e-5
+    policy_network_lr = 1e-5
     baseline_network_lr = 1e-3
     gamma = 1
     n_batches_baseline = 0
@@ -11,4 +11,4 @@ class Config():
     # game = 'CartPole-v0'
     discrete = False
     game = 'InvertedPendulum-v4'
-    exp_id = 'exp-41'
+    exp_id = 'exp-42'
