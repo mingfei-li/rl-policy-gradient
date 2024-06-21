@@ -25,8 +25,8 @@ class ContinuousPolicyModel(nn.Module):
         self.fc_log_sigma = nn.Linear(128, out_features)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.tanh(self.fc1(x))
+        x = F.tanh(self.fc2(x))
         mu = self.fc_mu(x)
         log_sigma = self.fc_log_sigma(x)
         sigma = F.softplus(log_sigma) + 1e-6
