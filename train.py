@@ -163,8 +163,9 @@ class Agent():
                 baselines = 0
 
             advantages = rewards - baselines
-            advantages -= advantages.mean()
-            advantages /= advantages.std()
+            if self.config.advantage_normalization:
+                advantages -= advantages.mean()
+                advantages /= advantages.std()
 
             self.policy_network.train()
             if self.config.discrete:
