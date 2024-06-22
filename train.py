@@ -117,7 +117,7 @@ class Agent():
 
         self.logger.add_scalar('baseline_loss', loss.item(), step)
         self.logger.add_scalar('baseline_lr', self.config.baseline_network_lr, step)
-        return preds
+        return preds.detach()
 
     def train(self):
         for i in tqdm(range(self.config.n_episodes)):
@@ -147,3 +147,4 @@ if __name__ == "__main__":
     for run_id in [0, 42, 1234, 9999, 11111]:
         set_seed(run_id)
         Agent(run_id, CartPoleConfig()).train()
+        Agent(run_id, InvertedPendulumConfig()).train()
