@@ -4,11 +4,11 @@ class InvertedPendulumConfig():
     baseline_network_lr = 1e-3
     gamma = 1
     use_baselines = True
-    advantage_normalization = False
+    advantage_normalization = True
     record_freq = 1_000
     discrete = False
     game = 'InvertedPendulum-v4'
-    exp_id = 'exp-2'
+    exp_id = 'exp-3'
 
 class CartPoleConfig():
     n_episodes = 5_000
@@ -16,8 +16,8 @@ class CartPoleConfig():
     baseline_network_lr = 1e-3
     gamma = 1
     use_baselines = True
-    advantage_normalization = False
+    advantage_normalization = True
     record_freq = 1_000
     discrete = True
     game = 'CartPole-v0'
-    exp_id = 'exp-2'
+    exp_id = 'exp-3'
