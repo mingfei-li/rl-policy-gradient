@@ -146,4 +146,4 @@ class Agent():
 if __name__ == "__main__":
     for run_id in [0, 42, 1234, 9999, 11111]:
         set_seed(run_id)
-        Agent(run_id, InvertedPendulumConfig()).train()
+        Agent(run_id, CartPoleConfig()).train()
