@@ -1,4 +1,4 @@
-from config import InvertedPendulumConfig, CartPoleConfig
+from config import CartPoleConfig, HalfCheetahConfig, InvertedPendulumConfig
 from gymnasium.experimental.wrappers import RecordVideoV0
 from models import DiscretePolicyModel, ContinuousPolicyModel, BaselineModel
 from tqdm import tqdm
@@ -146,5 +146,6 @@ class Agent():
 if __name__ == "__main__":
     for run_id in [0, 42, 1234, 9999, 11111]:
         set_seed(run_id)
-        Agent(run_id, CartPoleConfig()).train()
-        Agent(run_id, InvertedPendulumConfig()).train()
+        #Agent(run_id, CartPoleConfig()).train()
+        Agent(run_id, HalfCheetahConfig()).train()
+        #Agent(run_id, InvertedPendulumConfig()).train()
