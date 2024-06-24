@@ -103,7 +103,7 @@ class Agent():
         self.logger.add_scalar('entropy', torch.tensor(entropy).mean(), step)
 
         s = torch.stack(states)
-        rtg = torch.tensor(rewards_to_go)
+        rtg = torch.tensor(rewards_to_go, dtype=torch.float32)
         lp = torch.stack(log_probs)
         return s, rtg, lp
 

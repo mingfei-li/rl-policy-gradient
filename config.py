@@ -15,12 +15,12 @@ class HalfCheetahConfig():
     policy_network_lr = 1e-4
     baseline_network_lr = 1e-3
     gamma = 0.9
-    use_baselines = False
+    use_baselines = True
     advantage_normalization = False
     record_freq = 1_000
     discrete = False
     game = 'HalfCheetah-v4'
-    exp_id = 'exp-1'
+    exp_id = 'exp-2'
 
 class InvertedPendulumConfig():
     n_episodes = 5_000
