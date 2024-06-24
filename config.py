@@ -16,11 +16,11 @@ class HalfCheetahConfig():
     baseline_network_lr = 1e-3
     gamma = 0.9
     use_baselines = True
-    advantage_normalization = False
+    advantage_normalization = True
     record_freq = 1_000
     discrete = False
     game = 'HalfCheetah-v4'
-    exp_id = 'exp-2'
+    exp_id = 'exp-3'
 
 class InvertedPendulumConfig():
     n_episodes = 5_000
