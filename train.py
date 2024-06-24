@@ -10,6 +10,7 @@ import numpy as np
 import random
 import torch
 import torch.nn as nn
+import sys
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -144,8 +145,17 @@ class Agent():
         self.env.close()
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python train.py <env>")
+        sys.exit(1)
+
+    env = sys.argv[1]
+    env_config = env + "Config"
+    if env_config not in globals().keys():
+        print(f"{env} is not supported. Supported envs: CartPole, HalfCheetah, InvertedPendulum")
+        sys.exit(1)
+    config = globals()[env_config]()
+
     for run_id in [0, 42, 1234, 9999, 11111]:
         set_seed(run_id)
-        #Agent(run_id, CartPoleConfig()).train()
-        Agent(run_id, HalfCheetahConfig()).train()
-        #Agent(run_id, InvertedPendulumConfig()).train()
+        Agent(run_id, config).train()
